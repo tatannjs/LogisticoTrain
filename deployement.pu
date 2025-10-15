@@ -1,0 +1,44 @@
+@startuml deployement
+!theme aws-orange
+
+rectangle "Deployment Diagram" {
+    database "ProductionDB" as sqldatabase
+    database "HistoryDB" as nosqldatabase
+    cloud "sql-network" as sqlnet
+    cloud "nosql-network" as nosqlnet
+    cloud "ws-network" as wsnet
+    cloud "front-network" as frontnet
+    node "MOM Broker" as broker
+    node "HTTP Server" as front
+    node "webapp\n(Node.js >= 22)\n[profile: build-only]" as webappbuild
+    node "phpmyadmin" as pma
+    node "mongo-express" as mex
+    node "REST API" as restapi
+    node "RealTime API" as wsapi
+}
+circle "Users 80:80" as users
+circle "Access admin pma \nlocalhost:8888:80" as accesspma
+circle "Access admin mex \nlocalhost:8889:80" as accessmex
+
+front -down- frontnet : serve
+frontnet -down- wsapi : serve
+frontnet -down- restapi : serve
+
+sqlnet -down- sqldatabase
+nosqlnet -down- nosqldatabase
+wsapi -down- sqlnet : read/write
+wsapi -down- nosqlnet : read/write
+restapi -down- sqlnet : read/write
+restapi -down- nosqlnet : read/write
+
+restapi -up- wsnet : publish/subscribe
+wsnet -up- broker : publish/subscribe
+
+pma -up- sqlnet : manage
+mex -up- nosqlnet : manage
+
+pma -down- accesspma : web
+mex -down- accessmex : web
+front -right- users : web
+
+@enduml

@@ -1,9 +1,16 @@
-# Plan de service
+# Déploiement
+
+## Etape 1
+
+## Etape 2
+
+# Description
+
+## Plan de service
 
 **Usage : Stockage de l'état**
 1- ProductionDB :
     - nom : sqldatabase
-    - 
 
 **Usage : Stockage des actions**
 2- HistoryDB :
@@ -29,3 +36,7 @@
 
 9- webapp :
     - nom : webapp
+
+## Topologie réseau
+
+1- 
