@@ -1,8 +1,9 @@
-# Plan de déploiement Logistico-Train
+# Plan de déploiement — Logistico-Train
 
-## Etape 1
+## Étapes principales
 
-## Etape 2
+1. **Préparation** : Configurer les secrets et volumes (cf. sections "Secrets" et "Volumes persistants")
+2. **Déploiement** : Builder la WebApp puis démarrer les services principaux
 
 # Description
 
@@ -15,13 +16,13 @@
 - **Usage** : Stockage de l'état actuel du centre (rames, voies, tâches)
 - **Volumes** :
   - `sqldata` : Stockage persistant des données (/var/lib/mysql)
-  - Script d'initialisation : init.sql (création des tables au premier démarrage)
+  - Script d'initialisation : `init.sql` (création des tables au premier démarrage)
 - **Réseaux** :
   - `sql-net` : Réseau isolé pour accès aux bases de données
 - **Configuration** :
-  - Variables d'environnement pour credentials
-  - Healthcheck : vérification toutes les 10s
-  - Restart policy : unless-stopped
+  - Variables d'environnement pour les credentials
+  - Healthcheck : vérification toutes les 10 s
+  - Restart policy : `unless-stopped`
   
 
 ---
@@ -31,13 +32,13 @@
 - **Image** : MongoDB 7
 - **Usage** : Stockage de l'historique de toutes les actions (demandes, entrées, sorties, tâches)
 - **Volumes** :
-  - `nosql` : Stockage persistant des documents (/data/db)
+  - `nosqldata` : Stockage persistant des documents (/data/db)
 - **Réseaux** :
-  - `sql-net` : Réseau isolé pour accès aux bases de données (même réseau que sqldatabase)
+  - `nosql-net` : Réseau isolé pour accès aux bases de données (même réseau que sqldatabase)
 - **Configuration** :
-  - Variables d'environnement pour credentials
-  - Healthcheck : vérification toutes les 10s
-  - Restart policy : unless-stopped
+  - Variables d'environnement pour les credentials
+  - Healthcheck : vérification toutes les 10 s
+  - Restart policy : `unless-stopped`
 - **Secrets** :
   - Credentials MongoDB (username/password)
 
@@ -45,9 +46,9 @@
 
 ### 3. MOM Broker (Message Broker temps réel)
 **Service** : `broker`
-- **Image** : RabbitMQ 3.12-management
+- **Image** : `rabbitmq:3.12-management`
 - **Usage** : Gestion des notifications temps réel entre conducteurs et opérateurs
-- **Volumes** : Aucun (messages éphémères, données déjà persistées dans SQL + NoSQL)
+- **Volumes** : Aucun (messages éphémères, données déjà persistées dans SQL + NoSQL) 
   - *Note* : Un volume optionnel peut être ajouté pour persister les queues (/var/lib/rabbitmq)
 - **Réseaux** :
   - `broker-net` : Réseau isolé pour communication avec wsapi
@@ -57,8 +58,8 @@
   - 61613 : STOMP (WebSocket pour webapp)
 - **Configuration** :
   - Plugin STOMP activé
-  - Healthcheck : vérification toutes les 10s
-  - Restart policy : unless-stopped
+  - Healthcheck : vérification toutes les 10 s
+  - Restart policy : `unless-stopped`
 - **Secrets** :
   - Credentials RabbitMQ (username/password)
 
@@ -67,17 +68,18 @@
 ### 4. REST API (API de gestion)
 **Service** : `restapi`
 - **Image** : Python 3.11 (image personnalisée avec code embarqué)
-- **Usage** : API REST pour consultation état, gestion voies, inscription tâches
+- **Usage** : API REST pour consultation d'état, gestion des voies, inscription de tâches
 - **Build** : Dockerfile avec code précompilé (base stable)
 - **Volumes** : Aucun (code embarqué dans l'image pour optimisation)
 - **Réseaux** :
   - `sql-net` : Accès aux bases de données
+  - `nosql-net`
   - `front-net` : Communication avec front (reverse proxy)
 - **Dépendances** :
   - sqldatabase (condition: service_healthy)
   - nosqldatabase (condition: service_healthy)
 - **Configuration** :
-  - Restart policy : unless-stopped
+  - Restart policy : `unless-stopped`
 - **Secrets** :
   - Credentials bases de données (SQL + NoSQL)
   - Fichier de configuration complet si nécessaire
@@ -94,6 +96,7 @@
   - `maven-target` : Dossier de compilation (./target) - persistance du build
 - **Réseaux** :
   - `sql-net` : Accès aux bases de données
+  - `nosql-net`
   - `broker-net` : Communication avec RabbitMQ
   - `front-net` : Communication avec front (reverse proxy)
 - **Dépendances** :
@@ -102,7 +105,7 @@
   - broker (condition: service_healthy)
 - **Configuration** :
   - Command : Maven build + run (mvn spring-boot:run)
-  - Restart policy : unless-stopped
+  - Restart policy : `unless-stopped`
 - **Secrets** :
   - Credentials bases de données (SQL + NoSQL)
   - Credentials RabbitMQ
@@ -125,8 +128,8 @@
   - wsapi
   - webapp (build doit être terminé)
 - **Configuration** :
-  - Healthcheck : vérification toutes les 10s
-  - Restart policy : unless-stopped
+  - Healthcheck : vérification toutes les 10 s
+  - Restart policy : `unless-stopped`
 
 ---
 
@@ -171,7 +174,7 @@
 - **Usage** : Interface web pour administrer MongoDB
 - **Volumes** : Aucun
 - **Réseaux** :
-  - `sql-net` : Accès à nosqldatabase uniquement
+  - `nosql-net` : Accès à nosqldatabase uniquement
 - **Ports** :
   - 127.0.0.1:8889:8081 : Interface web (localhost uniquement, sécurisé)
 - **Dépendances** :
@@ -211,7 +214,7 @@
 
 ### Volumes nommés (gérés par Docker)
 - **`sqldata`** : Données MariaDB (/var/lib/mysql)
-- **`nosql`** : Données MongoDB (/data/db)
+- **`nosqldata`** : Données MongoDB (/data/db)
 - **`maven-cache`** : Cache Maven (~/.m2/repository) - performances
 - **`maven-target`** : Compilation Java (./target) - persistance du build
 - **`webapp-build`** : Build React - partagé entre webapp (écriture) et front (lecture seule)
@@ -250,7 +253,7 @@
 
 ## 🚀 Commandes de déploiement
 
-```bash
+```powershell
 # Lancer les services principaux
 docker compose up -d
 
