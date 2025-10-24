@@ -7,7 +7,7 @@
 
 # Description
 
-## 📋 Services Docker Compose
+##  Services Docker Compose
 
 
 ### 1. ProductionDB (Base de données de production)
@@ -187,7 +187,7 @@
 
 ---
 
-## 🌐 Topologie réseau
+##  Topologie réseau
 
 ### Réseaux définis
 
@@ -210,7 +210,7 @@
 
 ---
 
-## 💾 Volumes persistants
+##  Volumes persistants
 
 ### Volumes nommés (gérés par Docker)
 - **`sqldata`** : Données MariaDB (/var/lib/mysql)
@@ -227,7 +227,7 @@
 
 ---
 
-## 🔐 Secrets (à compléter)
+##  Secrets (à compléter)
 
 ### Secrets pour bases de données
 - **`mysql_root_password`** : Mot de passe root MariaDB
@@ -251,7 +251,7 @@
 
 ---
 
-## 🚀 Commandes de déploiement
+##  Commandes de déploiement
 
 ```powershell
 # Lancer les services principaux

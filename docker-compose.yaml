@@ -1,0 +1,281 @@
+version: '3.8'
+
+services:
+  # === BASES DE DONNÉES ===
+  
+  # 1. ProductionDB (Base de données de production)
+  sqldatabase:
+    image: mariadb:11
+    container_name: logistico_sql_db
+    environment:
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql_root_password
+      MYSQL_DATABASE: logistico_production
+      MYSQL_USER_FILE: /run/secrets/mysql_user
+      MYSQL_PASSWORD_FILE: /run/secrets/mysql_password
+    volumes:
+      - sqldata:/var/lib/mysql
+      - ./init-db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - sql-net
+    secrets:
+      - mysql_root_password
+      - mysql_user
+      - mysql_password
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # 2. HistoryDB (Base de données d'historique)
+  nosqldatabase:
+    image: mongo:7
+    container_name: logistico_nosql_db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME_FILE: /run/secrets/mongo_root_username
+      MONGO_INITDB_ROOT_PASSWORD_FILE: /run/secrets/mongo_root_password
+      MONGO_INITDB_DATABASE: logistico_history
+    volumes:
+      - nosqldata:/data/db
+    networks:
+      - nosql-net
+    secrets:
+      - mongo_root_username
+      - mongo_root_password
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # === MESSAGE BROKER ===
+  
+  # 3. MOM Broker (Message Broker temps réel)
+  broker:
+    image: rabbitmq:3.12-management
+    container_name: logistico_broker
+    environment:
+      RABBITMQ_DEFAULT_USER_FILE: /run/secrets/rabbitmq_user
+      RABBITMQ_DEFAULT_PASS_FILE: /run/secrets/rabbitmq_password
+    ports:
+      - "5672:5672"     # AMQP
+      - "15672:15672"   # Management UI
+      - "61613:61613"   # STOMP
+    networks:
+      - broker-net
+    secrets:
+      - rabbitmq_user
+      - rabbitmq_password
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # === APIS ===
+  
+  # 4. REST API (API de gestion)
+  restapi:
+    build:
+      context: ./RESTApi
+      dockerfile: Dockerfile
+    container_name: logistico_rest_api
+    environment:
+      # Variables d'environnement pour connexion BD
+      DATABASE_URL: "mysql://sqldatabase:3306/logistico_production"
+      MONGODB_URL: "mongodb://nosqldatabase:27017/logistico_history"
+    networks:
+      - sql-net
+      - nosql-net
+      - front-net
+    depends_on:
+      sqldatabase:
+        condition: service_healthy
+      nosqldatabase:
+        condition: service_healthy
+    secrets:
+      - mysql_user
+      - mysql_password
+      - mongo_root_username
+      - mongo_root_password
+    restart: unless-stopped
+
+  # 5. RealTime API (API temps réel)
+  wsapi:
+    image: eclipse-temurin:21-jdk
+    container_name: logistico_ws_api
+    working_dir: /app
+    command: ["./mvnw", "spring-boot:run"]
+    volumes:
+      - ./RealtimeAPI:/app
+      - maven-cache:/root/.m2/repository
+      - maven-target:/app/target
+    environment:
+      # Variables d'environnement pour Spring Boot
+      SPRING_DATASOURCE_URL: "jdbc:mysql://sqldatabase:3306/logistico_production"
+      SPRING_DATA_MONGODB_URI: "mongodb://nosqldatabase:27017/logistico_history"
+      RABBITMQ_HOST: broker
+      RABBITMQ_PORT: 5672
+    networks:
+      - sql-net
+      - nosql-net
+      - broker-net
+      - front-net
+    depends_on:
+      sqldatabase:
+        condition: service_healthy
+      nosqldatabase:
+        condition: service_healthy
+      broker:
+        condition: service_healthy
+    secrets:
+      - mysql_user
+      - mysql_password
+      - mongo_root_username
+      - mongo_root_password
+      - rabbitmq_user
+      - rabbitmq_password
+    restart: unless-stopped
+
+  # === FRONTEND ===
+  
+  # 6. HTTP Server (Serveur frontend)
+  front:
+    image: nginx:alpine
+    container_name: logistico_frontend
+    ports:
+      - "80:80"
+    volumes:
+      - webapp-build:/usr/share/nginx/html:ro
+      - ./vendorConfigurations/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - front-net
+    depends_on:
+      - restapi
+      - wsapi
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # 7. WebApp Builder (Construction application React)
+  webapp:
+    image: node:22
+    container_name: logistico_webapp_builder
+    working_dir: /app
+    command: ["sh", "-c", "npm install && npm run build"]
+    volumes:
+      - ./app:/app:ro
+      - webapp-build:/app/dist
+    profiles:
+      - build
+
+  # === OUTILS DE DÉVELOPPEMENT ===
+  
+  # 8. phpMyAdmin (Outil de développement)
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: logistico_phpmyadmin
+    environment:
+      PMA_HOST: sqldatabase
+      PMA_PORT: 3306
+    ports:
+      - "127.0.0.1:8888:80"
+    networks:
+      - sql-net
+    depends_on:
+      - sqldatabase
+    profiles:
+      - dev-tool
+    restart: always
+
+  # 9. Mongo Express (Outil de développement)
+  mongo-express:
+    image: mongo-express:latest
+    container_name: logistico_mongo_express
+    environment:
+      ME_CONFIG_MONGODB_SERVER: nosqldatabase
+      ME_CONFIG_MONGODB_PORT: 27017
+      ME_CONFIG_MONGODB_ADMINUSERNAME_FILE: /run/secrets/mongo_root_username
+      ME_CONFIG_MONGODB_ADMINPASSWORD_FILE: /run/secrets/mongo_root_password
+    ports:
+      - "127.0.0.1:8889:8081"
+    networks:
+      - nosql-net
+    depends_on:
+      - nosqldatabase
+    secrets:
+      - mongo_root_username
+      - mongo_root_password
+    profiles:
+      - dev-tool
+    restart: always
+
+# === RÉSEAUX ===
+networks:
+  sql-net:
+    driver: bridge
+    name: logistico_sql_network
+  
+  nosql-net:
+    driver: bridge
+    name: logistico_nosql_network
+  
+  broker-net:
+    driver: bridge
+    name: logistico_broker_network
+  
+  front-net:
+    driver: bridge
+    name: logistico_frontend_network
+
+# === VOLUMES ===
+volumes:
+  # Volumes pour données persistantes
+  sqldata:
+    name: logistico_sql_data
+  
+  nosqldata:
+    name: logistico_nosql_data
+  
+  # Volumes pour optimisation du build
+  maven-cache:
+    name: logistico_maven_cache
+  
+  maven-target:
+    name: logistico_maven_target
+  
+  # Volume partagé pour le build React
+  webapp-build:
+    name: logistico_webapp_build
+
+# === SECRETS ===
+secrets:
+  # Secrets pour MariaDB
+  mysql_root_password:
+    file: ./secrets/mysql_root_password.txt
+  
+  mysql_user:
+    file: ./secrets/mysql_user.txt
+  
+  mysql_password:
+    file: ./secrets/mysql_password.txt
+  
+  # Secrets pour MongoDB
+  mongo_root_username:
+    file: ./secrets/mongo_root_username.txt
+  
+  mongo_root_password:
+    file: ./secrets/mongo_root_password.txt
+  
+  # Secrets pour RabbitMQ
+  rabbitmq_user:
+    file: ./secrets/rabbitmq_user.txt
+  
+  rabbitmq_password:
+    file: ./secrets/rabbitmq_password.txt
