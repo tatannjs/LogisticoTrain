@@ -57,17 +57,14 @@ services:
     image: rabbitmq:3.12-management
     container_name: logistico_broker
     environment:
-      RABBITMQ_DEFAULT_USER_FILE: /run/secrets/rabbitmq_user
-      RABBITMQ_DEFAULT_PASS_FILE: /run/secrets/rabbitmq_password
+      RABBITMQ_DEFAULT_USER: rabbitmq_user
+      RABBITMQ_DEFAULT_PASS: rabbitmq_pass_2024
     ports:
       - "5672:5672"     # AMQP
       - "15672:15672"   # Management UI
       - "61613:61613"   # STOMP
     networks:
       - broker-net
-    secrets:
-      - rabbitmq_user
-      - rabbitmq_password
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "ping"]
       interval: 10s
