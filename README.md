@@ -379,3 +379,72 @@ docker stats
 - **MySQL user** : `logistico_user` / `logistico_pass_2024`
 - **MongoDB** : `logistico_admin` / `mongo_pass_2024`
 - **RabbitMQ** : `rabbitmq_user` / `rabbitmq_pass_2024`
+
+---
+
+## 🔧 Explications techniques et choix d'architecture
+
+### Problèmes rencontrés et solutions
+
+#### 1. Erreur 500 Frontend Nginx (Résolu)
+**Problème** : L'application React retournait une erreur 500 avec le message "rewrite or internal redirection cycle while internally redirecting to /index.html"
+
+**Cause racine** : 
+- Le volume Docker était monté sur `/usr/share/nginx/html` (répertoire par défaut de Nginx)
+- Mais la configuration `nginx.conf` définissait `root /var/www/app`
+- Nginx ne trouvait pas les fichiers et créait une boucle de redirection
+
+**Solution appliquée** :
+1. Modification du `docker-compose.yaml` : Volume monté sur `/var/www/app` au lieu de `/usr/share/nginx/html`
+2. Copie manuelle des fichiers React build dans le conteneur
+3. Résultat : Frontend opérationnel sur http://localhost
+
+#### 2. Configuration des volumes et build React
+**Choix technique** : Utilisation d'un service `webapp` dédié pour builder React
+- **Avantage** : Séparation des responsabilités (build vs serving)
+- **Volume nommé** : `webapp-build` pour partager les fichiers entre builder et Nginx
+- **Build process** : Webpack en mode production génère les assets optimisés
+
+### Architecture réseau sécurisée
+
+#### Isolation par réseaux Docker
+**Choix** : 4 réseaux isolés pour sécuriser les communications
+
+1. **`sql-net`** : Bases de données SQL/NoSQL + APIs + outils admin
+2. **`nosql-net`** : MongoDB isolé (actuellement fusionné avec sql-net)
+3. **`broker-net`** : RabbitMQ + WebSocket API
+4. **`front-net`** : Frontend + APIs backend
+
+**Avantages** :
+- Isolation des couches (frontend, backend, données, messaging)
+- Sécurité : Chaque service n'accède qu'aux ressources nécessaires
+- Monitoring : Trafic réseau traceable par couche
+
+#### Gestion des secrets
+**Méthode** : Docker Secrets avec fichiers externes
+- **Sécurité** : Credentials stockés dans `secrets/` (gitignore recommandé)
+- **Flexibilité** : Changement des mots de passe sans rebuild des images
+- **Best practice** : Variables d'environnement pointent vers les secrets
+
+### Choix des technologies
+
+#### Base de données polyglotte
+- **MariaDB 11** : Données relationnelles, ACID, transactions
+- **MongoDB 7** : Documents JSON, scalabilité horizontale, NoSQL
+
+#### Message Broker
+- **RabbitMQ 3.12** : Message queuing robuste, interface de management
+- **Utilisation** : Communication asynchrone entre services
+
+#### Frontend/Backend
+- **React + Webpack** : SPA moderne, build optimisé pour production
+- **Nginx Alpine** : Serveur web léger, haute performance
+- **Spring Boot 3.3.3** : APIs REST/WebSocket, écosystème Java mature
+- **Python Flask** : API REST légère, intégration rapide
+
+### Points d'amélioration identifiés
+
+1. **APIs en redémarrage** : REST Python et Spring Boot nécessitent des corrections
+2. **Upgrade Spring Boot** : Migration vers 3.5.x planifiée
+3. **Monitoring** : Ajout de health checks et métriques
+4. **Tests** : Suite de tests end-to-end à implémenter
