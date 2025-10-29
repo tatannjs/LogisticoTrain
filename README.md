@@ -269,3 +269,113 @@ docker compose down
 # Voir les logs
 docker compose logs -f [service]
 ```
+
+---
+
+## 🚀 Guide d'exécution complet
+
+### Prérequis
+```powershell
+# Vérifier Docker
+docker --version
+docker-compose --version
+```
+
+### 1. Démarrer les bases de données
+```powershell
+# Base SQL (MariaDB)
+docker-compose up -d sqldatabase
+
+# Base NoSQL (MongoDB) 
+docker-compose up -d nosqldatabase
+
+# Vérifier le statut
+docker-compose ps sqldatabase nosqldatabase
+```
+
+### 2. Démarrer le message broker
+```powershell
+# RabbitMQ avec management UI
+docker-compose up -d broker
+
+# Vérifier RabbitMQ
+docker-compose ps broker
+```
+
+### 3. Démarrer les APIs
+```powershell
+# API REST Python
+docker-compose up -d restapi
+
+# API WebSocket Spring Boot
+docker-compose up -d wsapi
+
+# Vérifier les APIs
+docker-compose ps restapi wsapi
+```
+
+### 4. Démarrer les outils d'administration
+```powershell
+# phpMyAdmin (port 8888)
+docker-compose --profile dev-tool up -d phpmyadmin
+
+# Mongo Express (port 8889)
+docker-compose --profile dev-tool up -d mongo-express
+```
+
+### 5. Builder et démarrer le frontend
+```powershell
+# Builder l'application React
+docker-compose --profile build run webapp
+
+# Démarrer le serveur web Nginx
+docker-compose up -d front
+```
+
+### 6. Commandes de test et vérification
+```powershell
+# Vérifier tous les conteneurs
+docker-compose ps
+
+# Tester la base SQL
+docker exec logistico_sql_db mariadb -u root -plogistico_root_2024 -e "SHOW DATABASES;"
+
+# Tester la base NoSQL
+docker exec logistico_nosql_db mongosh --eval "db.runCommand({ping: 1})"
+
+# Tester RabbitMQ Management API
+curl -u rabbitmq_user:rabbitmq_pass_2024 http://localhost:15672/api/overview
+
+# Voir les logs d'un service
+docker-compose logs -f [nom_service]
+```
+
+### 7. Accès aux interfaces web
+- **Application principale** : http://localhost
+- **phpMyAdmin** : http://localhost:8888
+- **Mongo Express** : http://localhost:8889  
+- **RabbitMQ Management** : http://localhost:15672 (rabbitmq_user / rabbitmq_pass_2024)
+
+### 8. Commandes de gestion
+```powershell
+# Arrêter tout
+docker-compose down
+
+# Arrêter et supprimer les volumes
+docker-compose down -v
+
+# Redémarrer un service
+docker-compose restart [nom_service]
+
+# Reconstruire une image
+docker-compose build [nom_service]
+
+# Voir l'utilisation des ressources
+docker stats
+```
+
+### 9. Identifiants configurés
+- **MySQL root** : `logistico_root_2024`
+- **MySQL user** : `logistico_user` / `logistico_pass_2024`
+- **MongoDB** : `logistico_admin` / `mongo_pass_2024`
+- **RabbitMQ** : `rabbitmq_user` / `rabbitmq_pass_2024`
