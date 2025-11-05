@@ -103,14 +103,10 @@ services:
 
   # 5. RealTime API (API temps réel)
   wsapi:
-    image: eclipse-temurin:21-jdk
+    build:
+      context: ./RealtimeAPI
+      dockerfile: Dockerfile
     container_name: logistico_ws_api
-    working_dir: /app
-    command: ["./mvnw", "spring-boot:run"]
-    volumes:
-      - ./RealtimeAPI:/app
-      - maven-cache:/root/.m2/repository
-      - maven-target:/app/target
     environment:
       # Variables d'environnement pour Spring Boot
       SPRING_DATASOURCE_URL: "jdbc:mysql://sqldatabase:3306/logistico_production"
