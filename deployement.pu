@@ -2,43 +2,52 @@
 !theme aws-orange
 
 rectangle "Deployment Diagram" {
-    database "ProductionDB" as sqldatabase
-    database "HistoryDB" as nosqldatabase
-    cloud "sql-network" as sqlnet
-    cloud "nosql-network" as nosqlnet
-    cloud "ws-network" as wsnet
-    cloud "front-network" as frontnet
-    node "MOM Broker" as broker
-    node "HTTP Server" as front
-    node "webapp\n(Node.js >= 22)\n[profile: build-only]" as webappbuild
-    node "phpmyadmin" as pma
-    node "mongo-express" as mex
-    node "REST API" as restapi
-    node "RealTime API" as wsapi
+    database "ProductionDB\n(MySQL)\nport 3306" as sqldatabase
+    database "HistoryDB\n(MongoDB)\nport 27017" as nosqldatabase
+
+    cloud "sql-network\n(port 3306)" as sqlnet
+    cloud "nosql-network\n(port 27017)" as nosqlnet
+    cloud "ws-network\n(port 1883 / 8080)" as wsnet
+    cloud "front-network\n(port 80 / 443)" as frontnet
+
+    node "MOM Broker\n(port 1883 / 8080)" as broker 
+    node "HTTP Server\n(port 80)" as front
+    node "webapp\n(Node.js >= 22)\n[profile: build-only]\n(port 3000)" as webappbuild
+    node "phpMyAdmin\n(port 80)" as pma
+    node "mongo-express\n(port 80)" as mex
+    node "REST API\n(port 8080)" as restapi
+    node "RealTime API\n(port 8081)" as wsapi
 }
-circle "Users 80:80" as users
-circle "Access admin pma \nlocalhost:8888:80" as accesspma
-circle "Access admin mex \nlocalhost:8889:80" as accessmex
 
-front -down- frontnet : serve
-frontnet -down- wsapi : serve
-frontnet -down- restapi : serve
+circle "Users\nhttp://localhost:80" as users
+circle "Access admin pma\nhttp://localhost:8888 → :80" as accesspma
+circle "Access admin mex\nhttp://localhost:8889 → :80" as accessmex
 
-sqlnet -down- sqldatabase
-nosqlnet -down- nosqldatabase
-wsapi -down- sqlnet : read/write
-wsapi -down- nosqlnet : read/write
-restapi -down- sqlnet : read/write
-restapi -down- nosqlnet : read/write
+' --- Frontend connections ---
+front -down- frontnet : serve :80
+frontnet -down- wsapi : serve :8081
+frontnet -down- restapi : serve :8080
 
-restapi -up- wsnet : publish/subscribe
-wsnet -up- broker : publish/subscribe
+' --- Databases ---
+sqlnet -down- sqldatabase : port 3306
+nosqlnet -down- nosqldatabase : port 27017
 
-pma -up- sqlnet : manage
-mex -up- nosqlnet : manage
+' --- APIs access databases ---
+wsapi -down- sqlnet : read/write :3306
+wsapi -down- nosqlnet : read/write :27017
+restapi -down- sqlnet : read/write :3306
+restapi -down- nosqlnet : read/write :27017
 
-pma -down- accesspma : web
-mex -down- accessmex : web
-front -right- users : web
+' --- Messaging ---
+restapi -up- wsnet : publish/subscribe :1883
+wsnet -up- broker : publish/subscribe :1883
+
+' --- Admin tools ---
+pma -up- sqlnet : manage :3306
+mex -up- nosqlnet : manage :27017
+
+pma -down- accesspma : web :80→8888
+mex -down- accessmex : web :80→8889
+front -right- users : web :80
 
 @enduml

@@ -1,15 +1,8 @@
 # Dockerfile pour l'API REST Python
-FROM python:3.11-slim
+FROM python:latest
 
 # Définir le répertoire de travail
 WORKDIR /app
-
-# Installer les dépendances système
-RUN apt-get update && apt-get install -y \
-    gcc \
-    default-libmysqlclient-dev \
-    pkg-config \
-    && rm -rf /var/lib/apt/lists/*
 
 # Copier les fichiers de dépendances
 COPY requirements.txt .

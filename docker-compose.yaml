@@ -9,10 +9,10 @@ services:
     image: mariadb:11
     container_name: logistico_sql_db
     environment:
-      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql_root_password
-      MYSQL_DATABASE: logistico_production
-      MYSQL_USER_FILE: /run/secrets/mysql_user
-      MYSQL_PASSWORD_FILE: /run/secrets/mysql_password
+      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/mysql_root_password
+      MARIADB_DATABASE: logistico_production
+      MARIADB_USER_FILE: /run/secrets/mysql_user
+      MARIADB_PASSWORD_FILE: /run/secrets/mysql_password
     volumes:
       - sqldata:/var/lib/mysql
       - ./init-db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
@@ -55,7 +55,7 @@ services:
   
   # 3. MOM Broker (Message Broker temps réel)
   broker:
-    image: rabbitmq:3.12-management
+    image: rabbitmq:management
     container_name: logistico_broker
     environment:
       RABBITMQ_DEFAULT_USER: rabbitmq_user
