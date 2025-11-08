@@ -59,12 +59,17 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: rabbitmq_user
       RABBITMQ_DEFAULT_PASS: rabbitmq_pass_2024
+      RABBITMQ_ENABLED_PLUGINS_FILE: /etc/rabbitmq/enabled_plugins
     ports:
       - "5672:5672"     # AMQP
       - "15672:15672"   # Management UI
-      # - "61613:61613"   # STOMP
+      - "15675:61613"   # STOMP TCP (WebSocket pour Spring Boot)
     volumes:
       - brokerdata:/var/lib/rabbitmq
+    command: >
+      bash -c "
+      rabbitmq-plugins enable rabbitmq_stomp rabbitmq_web_stomp &&
+      rabbitmq-server"
     networks:
       - broker-net
     healthcheck:
@@ -111,10 +116,11 @@ services:
     environment:
       # Variables d'environnement pour Spring Boot
       SPRING_DATA_MONGODB_URI: "mongodb://logistico_admin:mongo_pass_2024@nosqldatabase:27017/logistico_history?authSource=admin"
-      RABBITMQ_HOST: broker
-      RABBITMQ_PORT: 5672
-      RABBITMQ_USERNAME: rabbitmq_user
-      RABBITMQ_PASSWORD: rabbitmq_pass_2024
+      # Configuration broker pour STOMP (correspondance avec app.broker.*)
+      APP_BROKER_HOST: broker
+      APP_BROKER_PORT: 61613
+      APP_BROKER_LOGIN: rabbitmq_user
+      APP_BROKER_PASSWORD: rabbitmq_pass_2024
     networks:
       - sql-net
       - nosql-net

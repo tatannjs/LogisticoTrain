@@ -20,7 +20,7 @@ Application de gestion d'un centre de maintenance ferroviaire avec architecture 
 - **mongo-express** : Interface NoSQL  (http://localhost:8889)
 
 ###  Services à Corriger (1/7)
-- **webapp** : Application React avec erreur "Network Error" (APIs mal configurées)
+- **wsapi** : Spring Boot - configuration STOMP en cours (erreurs connexion RabbitMQ 61613 vs 15674)
 
 ###  Identifiants Configurés
 | Service | Utilisateur | Mot de passe | Base/Queue |
