@@ -2,47 +2,44 @@
 CREATE DATABASE IF NOT EXISTS logistico_production;
 USE logistico_production;
 
--- Table des voies
+-- Table des voies (correspondant à l'entité Voie)
 CREATE TABLE IF NOT EXISTS voies (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    numero INT NOT NULL UNIQUE,
-    status VARCHAR(50) DEFAULT 'libre',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    num_voie INT(11) NOT NULL PRIMARY KEY,
+    interdite TINYINT(1) NOT NULL
 );
 
--- Table des rames
+-- Table des rames (correspondant à l'entité Rame)
 CREATE TABLE IF NOT EXISTS rames (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    numero VARCHAR(50) NOT NULL UNIQUE,
-    type VARCHAR(100),
-    status VARCHAR(50) DEFAULT 'en_circulation',
-    voie_id INT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (voie_id) REFERENCES voies(id)
+    num_serie VARCHAR(12) NOT NULL PRIMARY KEY,
+    type_rame VARCHAR(50) NOT NULL,
+    voie INT(11) UNIQUE,
+    conducteur_entrant VARCHAR(50) NOT NULL,
+    FOREIGN KEY (voie) REFERENCES voies(num_voie)
 );
 
--- Table des tâches
+-- Table des tâches (correspondant à l'entité Tache avec clé primaire composite)
 CREATE TABLE IF NOT EXISTS taches (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    nom VARCHAR(200) NOT NULL,
-    description TEXT,
-    status VARCHAR(50) DEFAULT 'en_attente',
-    rame_id INT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (rame_id) REFERENCES rames(id)
+    num_serie VARCHAR(12) NOT NULL,
+    num_tache INT(11) NOT NULL,
+    tache TEXT NOT NULL,
+    PRIMARY KEY (num_serie, num_tache),
+    FOREIGN KEY (num_serie) REFERENCES rames(num_serie)
 );
 
 -- Données de test
-INSERT IGNORE INTO voies (numero, status) VALUES 
-(1, 'libre'),
-(2, 'occupee'),
-(3, 'libre'),
-(4, 'maintenance');
+INSERT IGNORE INTO voies (num_voie, interdite) VALUES 
+(1, 0),
+(2, 0),
+(3, 0),
+(4, 1);
 
-INSERT IGNORE INTO rames (numero, type, status) VALUES 
-('TGV001', 'TGV', 'en_circulation'),
-('TER002', 'TER', 'maintenance'),
-('ICE003', 'ICE', 'en_circulation');
+INSERT IGNORE INTO rames (num_serie, type_rame, conducteur_entrant) VALUES 
+('TGV001', 'TGV', 'Jean Dupont'),
+('TER002', 'TER', 'Marie Martin'),
+('ICE003', 'ICE', 'Pierre Durand');
+
+INSERT IGNORE INTO taches (num_serie, num_tache, tache) VALUES
+('TGV001', 1, 'Vérification des freins'),
+('TGV001', 2, 'Contrôle de sécurité'),
+('TER002', 1, 'Maintenance moteur'),
+('ICE003', 1, 'Nettoyage intérieur');
