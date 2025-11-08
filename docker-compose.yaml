@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Configuration validée : réseaux SQL/NoSQL, secrets, volumes opérationnels
 services:
   # === BASES DE DONNÉES ===
@@ -39,6 +37,7 @@ services:
       MONGO_INITDB_DATABASE: logistico_history
     volumes:
       - nosqldata:/data/db
+      - nosqlconfig:/data/configdb
     networks:
       - nosql-net
     secrets:
@@ -63,7 +62,9 @@ services:
     ports:
       - "5672:5672"     # AMQP
       - "15672:15672"   # Management UI
-      - "61613:61613"   # STOMP
+      # - "61613:61613"   # STOMP
+    volumes:
+      - brokerdata:/var/lib/rabbitmq
     networks:
       - broker-net
     healthcheck:
@@ -109,10 +110,11 @@ services:
     container_name: logistico_ws_api
     environment:
       # Variables d'environnement pour Spring Boot
-      SPRING_DATASOURCE_URL: "jdbc:mysql://sqldatabase:3306/logistico_production"
-      SPRING_DATA_MONGODB_URI: "mongodb://nosqldatabase:27017/logistico_history"
+      SPRING_DATA_MONGODB_URI: "mongodb://logistico_admin:mongo_pass_2024@nosqldatabase:27017/logistico_history?authSource=admin"
       RABBITMQ_HOST: broker
       RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: rabbitmq_user
+      RABBITMQ_PASSWORD: rabbitmq_pass_2024
     networks:
       - sql-net
       - nosql-net
@@ -163,6 +165,10 @@ services:
     container_name: logistico_webapp_builder
     working_dir: /app
     command: ["sh", "-c", "npm install && npm run build"]
+    environment:
+      # Configuration des URLs d'API pour l'application React
+      API_EP_URI: "http://localhost/api"
+      RT_API_EP_URI: "http://localhost/wsapi"
     volumes:
       - ./app:/app
       - webapp-build:/app/build
@@ -237,16 +243,17 @@ volumes:
   nosqldata:
     name: logistico_nosql_data
   
-  # Volumes pour optimisation du build
-  maven-cache:
-    name: logistico_maven_cache
-  
-  maven-target:
-    name: logistico_maven_target
+  # Volume pour configuration MongoDB
+  nosqlconfig:
+    name: logistico_nosql_config
   
   # Volume partagé pour le build React
   webapp-build:
     name: logistico_webapp_build
+
+  # Volume pour RabbitMQ (données de configuration et files)
+  brokerdata:
+    name: logistico_broker_data
 
 # === SECRETS ===
 secrets:
