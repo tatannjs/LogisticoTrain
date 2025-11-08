@@ -1,6 +1,61 @@
-# Plan de déploiement — Logistico-Train
+#  Logistico-Train 
+##  Vue d'ensemble
 
-## Étapes principales
+Application de gestion d'un centre de maintenance ferroviaire avec architecture microservices Docker.
+
+**Technologies** : React (Frontend) + Python Flask (REST) + Spring Boot (WebSocket) + MariaDB + MongoDB + RabbitMQ + Nginx
+
+**Architecture** : 9 services Docker orchestrés avec Docker Compose, 4 réseaux isolés, gestion complète des secrets
+
+---
+
+##  Statut du Projet
+
+###  Services Opérationnels (6/7)
+- **sqldatabase** : MariaDB 11  (Base de production)
+- **nosqldatabase** : MongoDB 7  (Historique des actions)  
+- **broker** : RabbitMQ 3.12  (Messaging temps réel)
+- **front** : Nginx Alpine  (Serveur web + reverse proxy)
+- **phpmyadmin** : Interface SQL  (http://localhost:8888)
+- **mongo-express** : Interface NoSQL  (http://localhost:8889)
+
+###  Services à Corriger (1/7)
+- **webapp** : Application React avec erreur "Network Error" (APIs mal configurées)
+
+###  Identifiants Configurés
+| Service | Utilisateur | Mot de passe | Base/Queue |
+|---------|-------------|-------------|------------|
+| **MariaDB root** | `root` | `logistico_root_2024` | - |
+| **MariaDB app** | `logistico_user` | `logistico_pass_2024` | `logistico_production` |
+| **MongoDB** | `logistico_admin` | `mongo_pass_2024` | `logistico_history` |
+| **RabbitMQ** | `rabbitmq_user` | `rabbitmq_pass_2024` | - |
+
+---
+
+##  Guide de Démarrage Rapide
+
+```powershell
+# 1. Démarrer tous les services
+docker-compose up -d
+
+# 2. Builder l'application React avec les bonnes URLs
+docker-compose --profile build up webapp --force-recreate
+
+# 3. Redémarrer le frontend pour prendre en compte le nouveau build
+docker-compose restart front
+
+# 4. Accéder à l'application
+# http://localhost - Application principale
+# http://localhost:8888 - phpMyAdmin (root/logistico_root_2024)
+# http://localhost:8889 - Mongo Express (logistico_admin/mongo_pass_2024)
+# http://localhost:15672 - RabbitMQ Management (rabbitmq_user/rabbitmq_pass_2024)
+```
+
+---
+
+##  Architecture Détaillée
+
+### Étapes principales
 
 1. **Préparation** : Configurer les secrets et volumes (cf. sections "Secrets" et "Volumes persistants")
 2. **Déploiement** : Builder la WebApp puis démarrer les services principaux
@@ -380,9 +435,134 @@ docker stats
 - **MongoDB** : `logistico_admin` / `mongo_pass_2024`
 - **RabbitMQ** : `rabbitmq_user` / `rabbitmq_pass_2024`
 
+##  Problèmes Résolus et Solutions
+
+###  Erreur "Fatal Error: Network Error" (EN COURS)
+**Problème** : L'application React ne peut pas communiquer avec les APIs backend
+
+**Diagnostic** :
+-  Nginx fonctionne et sert l'application React (200 OK)
+-  API REST accessible directement : `curl http://localhost/api/v1/voies` → données JSON
+-  Frontend compilé avec mauvaises URLs d'API (`http://localhost:5001` au lieu de `http://localhost`)
+
+**Solution en cours** :
+```powershell
+# Variables d'environnement corrigées dans docker-compose.yaml
+API_EP_URI: "http://localhost/api"
+RT_API_EP_URI: "http://localhost/wsapi"
+
+# Rebuild nécessaire
+docker-compose --profile build up webapp --force-recreate
+```
+
+###  Erreurs Hibernate "Schema-validation: missing column [num_serie]" (RÉSOLU)
+**Problème** : Spring Boot ne trouvait pas la colonne `num_serie` dans la table `taches`
+
+**Diagnostic** : Incohérence entre entités Java et schéma BDD
+- Entité Java `Tache.java` : `@JoinColumn(name = "num_serie")`  
+- BDD `init.sql` : Table avec colonne `num_serie_rame`
+
+**Solution appliquée** :
+```sql
+-- init-db/init.sql modifié
+CREATE TABLE taches (
+    num_tache INT NOT NULL,
+    num_serie VARCHAR(12) NOT NULL,  -- Corrigé : était num_serie_rame
+    tache TEXT,
+    PRIMARY KEY (num_tache, num_serie),
+    FOREIGN KEY (num_serie) REFERENCES rames(num_serie)
+);
+```
+
+###  Volumes Docker anonymes (RÉSOLU)
+**Problème** : `docker-compose up` créait des volumes anonymes non nommés
+
+**Solution** : Tous les volumes nommés et documentés dans `docker-compose.yaml`
+```yaml
+volumes:
+  sqldata:           # Données MariaDB (/var/lib/mysql)
+  nosqldata:         # Données MongoDB (/data/db)  
+  brokerdata:        # Données RabbitMQ (/var/lib/rabbitmq)
+  maven-cache:       # Cache Maven (~/.m2/repository)
+  webapp-build:      # Build React partagé nginx/webapp
+```
+
+###  Erreur Nginx 500 "rewrite or internal redirection cycle" (RÉSOLU)
+**Problème** : Boucle de redirection infinie sur toutes les pages
+
+**Cause** : Configuration Nginx incohérente
+- Volume monté : `/var/www/app` 
+- Mais config manquait : `location / { try_files $uri $uri/ /index.html; }`
+
+**Solution** :
+```nginx
+# vendorConfigurations/nginx.conf
+location / {
+    try_files $uri $uri/ /index.html;
+}
+```
+
+###  Authentification MongoDB (RÉSOLU)
+**Problème** : Erreur "AuthenticationFailed" pour Spring Boot
+
+**Solution** : Configuration complète avec base d'authentification
+```properties
+# application-development.properties
+spring.data.mongodb.uri=mongodb://logistico_admin:mongo_pass_2024@nosqldatabase:27017/logistico_history?authSource=admin
+```
+
 ---
 
-## 🔧 Explications techniques et choix d'architecture
+##  Configuration Avancée
+
+### Variables d'Environnement par Service
+
+#### RESTApi (Python Flask)
+```bash
+DATABASE_URL=mysql://logistico_user:logistico_pass_2024@sqldatabase:3306/logistico_production
+MONGODB_URL=mongodb://logistico_admin:mongo_pass_2024@nosqldatabase:27017/logistico_history?authSource=admin
+ENABLE_CORS=true
+DEBUG=false
+```
+
+#### WSApi (Spring Boot)  
+```properties
+# Profil actif : development (charge application-development.properties)
+spring.profiles.active=development
+spring.datasource.url=jdbc:mariadb://sqldatabase:3306/logistico_production
+spring.data.mongodb.uri=mongodb://logistico_admin:mongo_pass_2024@nosqldatabase:27017/logistico_history?authSource=admin
+app.broker.host=broker
+```
+
+#### WebApp (React Build)
+```bash
+API_EP_URI=http://localhost/api
+RT_API_EP_URI=http://localhost/wsapi
+PUBLIC_PATH=/
+```
+
+### Configuration Réseau Nginx
+```nginx
+# REST API proxy
+location ~* ^/api {
+    proxy_pass http://restapi:5000;
+}
+
+# WebSocket API proxy  
+location ~* ^/wsapi {
+    rewrite /wsapi/?(.*) /api/$1 break;
+    proxy_pass http://wsapi:8080;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+}
+
+# Frontend SPA
+location / {
+    try_files $uri $uri/ /index.html;
+}
+```
+
+---
 
 ### Problèmes rencontrés et solutions
 
