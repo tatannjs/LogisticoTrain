@@ -41,6 +41,7 @@ restapi -down- nosqlnet : read/write :27017
 ' --- Messaging ---
 restapi -up- wsnet : publish/subscribe :1883
 wsnet -up- broker : publish/subscribe :1883
+broker -up- accessBroker : Access admin http://localhost:15672
 
 ' --- Admin tools ---
 pma -up- sqlnet : manage :3306
@@ -49,5 +50,30 @@ mex -up- nosqlnet : manage :27017
 pma -down- accesspma : web :80→8888
 mex -down- accessmex : web :80→8889
 front -right- users : web :80
+@enduml
+
+@startuml Volume_deployement
+!theme aws-orange  
+rectangle "Volumes" {
+        folder "Persistent data volumes" {
+            storage "sqldata\n(logistico_sql_data)" as v_sqldata
+            storage "nosqldata\n(logistico_nosql_data)" as v_nosqldata
+            storage "nosqlconfig\n(logistico_nosql_config)" as v_nosqlconfig
+            storage "brokerdata\n(logistico_broker_data)" as v_brokerdata
+            storage "webapp-build\n(logistico_webapp_build)" as v_webappbuild
+        }
+
+        v_sqldata -down- "sqldatabase : /var/lib/mysql"
+        v_nosqldata -down- "nosqldatabase : /data/db"
+        v_nosqlconfig -down- "nosqldatabase : /data/configdb"
+        v_brokerdata -down- "broker : /var/lib/rabbitmq"
+
+        folder "Mounts for configuration files" {
+            file "sql-init" as f_sqlinit
+            file "nginx-conf" as f_nginx
+        }
+        f_sqlinit -down- "sqldatabase : /docker-entrypoint-initdb.d/init.sql"
+        f_nginx -down- "front : /etc/nginx/nginx.conf"
+}
 
 @enduml
