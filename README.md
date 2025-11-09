@@ -32,19 +32,16 @@ Application de gestion d'un centre de maintenance ferroviaire avec architecture 
 
 ---
 
-##  Guide de Démarrage Rapide
+##  Guide de Demarrage Rapide
 
 ```powershell
-# 1. Démarrer tous les services
+# Demarrer tous les services (le build React se fait automatiquement)
 docker-compose up -d
 
-# 2. Builder l'application React avec les bonnes URLs
-docker-compose --profile build up webapp --force-recreate
+# Verifier le statut
+docker-compose ps
 
-# 3. Redémarrer le frontend pour prendre en compte le nouveau build
-docker-compose restart front
-
-# 4. Accéder à l'application
+# Acceder a l'application
 # http://localhost - Application principale
 # http://localhost:8888 - phpMyAdmin (root/logistico_root_2024)
 # http://localhost:8889 - Mongo Express (logistico_admin/mongo_pass_2024)

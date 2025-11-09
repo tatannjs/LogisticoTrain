@@ -156,8 +156,12 @@ services:
     networks:
       - front-net
     depends_on:
-      - restapi
-      - wsapi
+      webapp:
+        condition: service_completed_successfully
+      restapi:
+        condition: service_started
+      wsapi:
+        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
       interval: 10s
@@ -178,8 +182,6 @@ services:
     volumes:
       - ./app:/app
       - webapp-build:/app/build
-    profiles:
-      - build
 
   # === OUTILS DE DÉVELOPPEMENT ===
   
