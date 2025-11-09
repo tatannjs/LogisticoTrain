@@ -18,9 +18,8 @@ Application de gestion d'un centre de maintenance ferroviaire avec architecture 
 - **front** : Nginx Alpine  (Serveur web + reverse proxy)
 - **phpmyadmin** : Interface SQL  (http://localhost:8888)
 - **mongo-express** : Interface NoSQL  (http://localhost:8889)
-
-###  Services à Corriger (1/7)
-- **wsapi** : Spring Boot - configuration STOMP en cours (erreurs connexion RabbitMQ 61613 vs 15674)
+- **wsapi** : Spring Boot 3.3.3 (API en temps réel)
+- **restapi** : Python Flask 3.0 (API rest)
 
 ###  Identifiants Configurés
 | Service | Utilisateur | Mot de passe | Base/Queue |
@@ -30,6 +29,7 @@ Application de gestion d'un centre de maintenance ferroviaire avec architecture 
 | **MongoDB** | `logistico_admin` | `mongo_pass_2024` | `logistico_history` |
 | **RabbitMQ** | `rabbitmq_user` | `rabbitmq_pass_2024` | - |
 
+(rabbitMQ n'utilise pas les secrets)
 ---
 
 ##  Guide de Demarrage Rapide
@@ -55,12 +55,11 @@ docker-compose ps
 ### Étapes principales
 
 1. **Préparation** : Configurer les secrets et volumes (cf. sections "Secrets" et "Volumes persistants")
-2. **Déploiement** : Builder la WebApp puis démarrer les services principaux
+2. **Déploiement** : Builder la webapp et les api puis démarrer les services principaux
 
 # Description
 
 ##  Services Docker Compose
-
 
 ### 1. ProductionDB (Base de données de production)
 **Service** : `sqldatabase`
@@ -68,15 +67,16 @@ docker-compose ps
 - **Usage** : Stockage de l'état actuel du centre (rames, voies, tâches)
 - **Volumes** :
   - `sqldata` : Stockage persistant des données (/var/lib/mysql)
-  - Script d'initialisation : `init.sql` (création des tables au premier démarrage)
+  - Script d'initialisation : `init.sql` (création des tables au premier démarrage, mount by en lecture seulement)
 - **Réseaux** :
   - `sql-net` : Réseau isolé pour accès aux bases de données
 - **Configuration** :
-  - Variables d'environnement pour les credentials
+  - Variables d'environnement pour les credentials ( MARIADB_ROOT_PASSWORD, MARIADB_DATABASE, MARIADB_USER, MARIADB_PASSWORD)
   - Healthcheck : vérification toutes les 10 s
   - Restart policy : `unless-stopped`
+- **Secret** :
+  - Credentials mysql (username/password)
   
-
 ---
 
 ### 2. HistoryDB (Base de données d'historique)
@@ -85,10 +85,11 @@ docker-compose ps
 - **Usage** : Stockage de l'historique de toutes les actions (demandes, entrées, sorties, tâches)
 - **Volumes** :
   - `nosqldata` : Stockage persistant des documents (/data/db)
+  - `nosqlconfig` : Stocke la configuration du serveur Mongo
 - **Réseaux** :
   - `nosql-net` : Réseau isolé pour accès aux bases de données (même réseau que sqldatabase)
 - **Configuration** :
-  - Variables d'environnement pour les credentials
+  - Variables d'environnement pour les credentials ( MONGO_INITDB_ROOT_USERNAME, MONGO_INITDB_ROOT_PASSWORD, MONGO_INITDB_DATABASE)
   - Healthcheck : vérification toutes les 10 s
   - Restart policy : `unless-stopped`
 - **Secrets** :
@@ -98,10 +99,10 @@ docker-compose ps
 
 ### 3. MOM Broker (Message Broker temps réel)
 **Service** : `broker`
-- **Image** : `rabbitmq:3.12-management`
+- **Image** : `rabbitmq:management`
 - **Usage** : Gestion des notifications temps réel entre conducteurs et opérateurs
-- **Volumes** : Aucun (messages éphémères, données déjà persistées dans SQL + NoSQL) 
-  - *Note* : Un volume optionnel peut être ajouté pour persister les queues (/var/lib/rabbitmq)
+- **Volumes** :
+  - *brokerdata* : volume optionnel ajouté pour persister les queues (/var/lib/rabbitmq)
 - **Réseaux** :
   - `broker-net` : Réseau isolé pour communication avec wsapi
 - **Ports** :
@@ -113,39 +114,35 @@ docker-compose ps
   - Healthcheck : vérification toutes les 10 s
   - Restart policy : `unless-stopped`
 - **Secrets** :
-  - Credentials RabbitMQ (username/password)
+  - Credentials RabbitMQ (username/password) (Non fonctionnel)
 
 ---
 
 ### 4. REST API (API de gestion)
 **Service** : `restapi`
-- **Image** : Python 3.11 (image personnalisée avec code embarqué)
+- **Image** : DockerFile basé sur la dernière version de Python
 - **Usage** : API REST pour consultation d'état, gestion des voies, inscription de tâches
 - **Build** : Dockerfile avec code précompilé (base stable)
 - **Volumes** : Aucun (code embarqué dans l'image pour optimisation)
 - **Réseaux** :
   - `sql-net` : Accès aux bases de données
-  - `nosql-net`
+  - `nosql-net` : Accès aux bases de données
   - `front-net` : Communication avec front (reverse proxy)
 - **Dépendances** :
   - sqldatabase (condition: service_healthy)
   - nosqldatabase (condition: service_healthy)
 - **Configuration** :
+  - Variables d'environnement pour la connection au bdd (DATABASE_URL , MONGODB_URL)
   - Restart policy : `unless-stopped`
 - **Secrets** :
   - Credentials bases de données (SQL + NoSQL)
-  - Fichier de configuration complet si nécessaire
 
 ---
 
 ### 5. RealTime API (API temps réel)
 **Service** : `wsapi`
-- **Image** : Eclipse Temurin JDK 21
+- **Image** : DockerFile baser sur maven:3.9.8-eclipse-temurin-21
 - **Usage** : WebSocket pour demandes/acceptations/sorties de rames + notifications temps réel
-- **Volumes** :
-  - Code source monté : ./RealtimeAPI (bind mount, modifications fréquentes)
-  - `maven-cache` : Cache Maven persistant (~/.m2/repository) - performances
-  - `maven-target` : Dossier de compilation (./target) - persistance du build
 - **Réseaux** :
   - `sql-net` : Accès aux bases de données
   - `nosql-net`
@@ -156,7 +153,8 @@ docker-compose ps
   - nosqldatabase (condition: service_healthy)
   - broker (condition: service_healthy)
 - **Configuration** :
-  - Command : Maven build + run (mvn spring-boot:run)
+  - Variables d'environnement pour la connection bdd (SPRING_DATA_MONGODB_URI)
+  - Variables d'environnement pour brokker : (APP_BROKER_HOST, APP_BROKER_PORT, APP_BROKER_LOGIN, APP_BROKER_PASSWORD)
   - Restart policy : `unless-stopped`
 - **Secrets** :
   - Credentials bases de données (SQL + NoSQL)
@@ -170,7 +168,7 @@ docker-compose ps
 - **Usage** : Point d'entrée des clients, sert fichiers statiques + reverse proxy vers APIs
 - **Volumes** :
   - `webapp-build` : Build de l'application React (lecture seule)
-  - Configuration Nginx personnalisée : ./vendorConfigurations/nginx.conf (lecture seule)
+  - Configuration Nginx personnalisée : ./vendorConfigurations/nginx.conf (bind mount en lecture seule)
 - **Réseaux** :
   - `front-net` : Reverse proxy vers restapi + wsapi
 - **Ports** :
@@ -190,14 +188,15 @@ docker-compose ps
 - **Image** : Node.js 22
 - **Usage** : Build de l'application web cliente (React + Webpack)
 - **Volumes** :
-  - Code source monté : ./app (bind mount, lecture seule)
-  - `webapp-build` : Sortie du build (écriture) - partagé avec front
+  - Code source monté : ./app (bind mount)
+  - `webapp-build` : Sortie du build - partagé avec front
 - **Réseaux** :
   - Bridge par défaut (pas besoin de réseau custom, pas de communication avec autres services)
-- **Profiles** : `build` (ne se lance pas avec docker compose up par défaut)
 - **Configuration** :
-  - Command : npm install && npm run build
+  - Command : npm install ou npm ci && npm run build (install ou ci en fonction de l'hôte)
   - Fichier de configuration : webpack.prod.js
+
+- **Note** : utiliser npm install ou ci en fonction de l'os hôte
 
 ---
 
@@ -233,6 +232,7 @@ docker-compose ps
   - nosqldatabase
 - **Profiles** : `dev-tool` (ne se lance qu'avec --profile dev-tool)
 - **Configuration** :
+  - Variables d'environnement (ME_CONFIG_MONGODB_SERVER, ME_CONFIG_MONGODB_PORT, ME_CONFIG_MONGODB_ADMINUSERNAME_FILE, ME_CONFIG_MONGODB_ADMINPASSWORD_FILE)
   - Restart policy : always (outil de développement disponible en permanence)
 - **Secrets** :
   - Utilise les credentials de nosqldatabase
@@ -244,62 +244,22 @@ docker-compose ps
 ### Réseaux définis
 
 - **`sql-net`** : Réseau isolé pour bases de données
-  - Membres : sqldatabase, nosqldatabase, restapi, wsapi, phpmyadmin, mongo-express
+  - Membres : sqldatabase, restapi, wsapi, phpmyadmin
+  - driver : bridge
+
+- **`nosql-net`** : Réseau isolé pour bases de données
+  - Membres : nosqldatabase, restapi, wsapi, mongo-express
+  - driver : bridge
 
 - **`broker-net`** : Réseau isolé pour message broker
   - Membres : broker, wsapi
+  - driver : bridge
 
 - **`front-net`** : Réseau frontend-backend
   - Membres : restapi, wsapi, front
+  - driver : bridge
 
 - **Bridge par défaut** : Pour webapp (pas de communication avec autres services)
-
-### Isolation et sécurité
-- Les bases de données ne sont accessibles que par les APIs et outils dev
-- Le broker est isolé et accessible uniquement par wsapi
-- Front communique uniquement avec les APIs (pas d'accès direct aux BD)
-- Outils de développement isolés sur localhost uniquement
-
----
-
-##  Volumes persistants
-
-### Volumes nommés (gérés par Docker)
-- **`sqldata`** : Données MariaDB (/var/lib/mysql)
-- **`nosqldata`** : Données MongoDB (/data/db)
-- **`maven-cache`** : Cache Maven (~/.m2/repository) - performances
-- **`maven-target`** : Compilation Java (./target) - persistance du build
-- **`webapp-build`** : Build React - partagé entre webapp (écriture) et front (lecture seule)
-
-### Bind mounts (montage depuis l'hôte)
-- **./app** → webapp (code source React)
-- **./RealtimeAPI** → wsapi (code source Java Spring)
-- **./vendorConfigurations/nginx.conf** → front (configuration Nginx)
-- **./init-db/init.sql** → sqldatabase (script d'initialisation BD)
-
----
-
-##  Secrets (à compléter)
-
-### Secrets pour bases de données
-- **`mysql_root_password`** : Mot de passe root MariaDB
-- **`mysql_user`** : Utilisateur applicatif MariaDB
-- **`mysql_password`** : Mot de passe utilisateur MariaDB
-- **`mongo_root_username`** : Utilisateur admin MongoDB
-- **`mongo_root_password`** : Mot de passe admin MongoDB
-
-### Secrets pour broker
-- **`rabbitmq_user`** : Utilisateur RabbitMQ
-- **`rabbitmq_password`** : Mot de passe RabbitMQ
-
-### Configurations complètes (si nécessaire)
-- **`restapi_config`** : Configuration complète de l'API REST (si credentials non externalisables)
-- **`wsapi_application_properties`** : application.properties de wsapi (si credentials non externalisables)
-
-### Notes de sécurité
-- Aucun mot de passe en clair dans docker-compose.yml
-- Secrets stockés dans des fichiers externes ou Docker secrets
-- Accès aux secrets en lecture seule pour les services
 
 ---
 
@@ -312,9 +272,6 @@ docker compose up -d
 # Lancer avec outils de développement
 docker compose --profile dev-tool up -d
 
-# Builder l'application web
-docker compose --profile build run webapp
-
 # Arrêter tous les services
 docker compose down
 
@@ -324,7 +281,7 @@ docker compose logs -f [service]
 
 ---
 
-## 🚀 Guide d'exécution complet
+## 🚀 Guide d'exécution manuel complet
 
 ### Prérequis
 ```powershell
@@ -378,7 +335,7 @@ docker-compose --profile dev-tool up -d mongo-express
 ### 5. Builder et démarrer le frontend
 ```powershell
 # Builder l'application React
-docker-compose --profile build run webapp
+docker-compose run webapp
 
 # Démarrer le serveur web Nginx
 docker-compose up -d front
@@ -426,31 +383,8 @@ docker-compose build [nom_service]
 docker stats
 ```
 
-### 9. Identifiants configurés
-- **MySQL root** : `logistico_root_2024`
-- **MySQL user** : `logistico_user` / `logistico_pass_2024`
-- **MongoDB** : `logistico_admin` / `mongo_pass_2024`
-- **RabbitMQ** : `rabbitmq_user` / `rabbitmq_pass_2024`
-
 ##  Problèmes Résolus et Solutions
 
-###  Erreur "Fatal Error: Network Error" (EN COURS)
-**Problème** : L'application React ne peut pas communiquer avec les APIs backend
-
-**Diagnostic** :
--  Nginx fonctionne et sert l'application React (200 OK)
--  API REST accessible directement : `curl http://localhost/api/v1/voies` → données JSON
--  Frontend compilé avec mauvaises URLs d'API (`http://localhost:5001` au lieu de `http://localhost`)
-
-**Solution en cours** :
-```powershell
-# Variables d'environnement corrigées dans docker-compose.yaml
-API_EP_URI: "http://localhost/api"
-RT_API_EP_URI: "http://localhost/wsapi"
-
-# Rebuild nécessaire
-docker-compose --profile build up webapp --force-recreate
-```
 
 ###  Erreurs Hibernate "Schema-validation: missing column [num_serie]" (RÉSOLU)
 **Problème** : Spring Boot ne trouvait pas la colonne `num_serie` dans la table `taches`
@@ -472,16 +406,12 @@ CREATE TABLE taches (
 ```
 
 ###  Volumes Docker anonymes (RÉSOLU)
-**Problème** : `docker-compose up` créait des volumes anonymes non nommés
+**Problème** : `docker-compose up` créait un volume anonyme non nommé
 
 **Solution** : Tous les volumes nommés et documentés dans `docker-compose.yaml`
 ```yaml
 volumes:
-  sqldata:           # Données MariaDB (/var/lib/mysql)
-  nosqldata:         # Données MongoDB (/data/db)  
   brokerdata:        # Données RabbitMQ (/var/lib/rabbitmq)
-  maven-cache:       # Cache Maven (~/.m2/repository)
-  webapp-build:      # Build React partagé nginx/webapp
 ```
 
 ###  Erreur Nginx 500 "rewrite or internal redirection cycle" (RÉSOLU)
@@ -508,6 +438,16 @@ location / {
 spring.data.mongodb.uri=mongodb://logistico_admin:mongo_pass_2024@nosqldatabase:27017/logistico_history?authSource=admin
 ```
 
+###  Erreur de build de l'api realtime (RÉSOLU)
+**Problème** : Erreur lors de la compilation de l'api Realtime
+**Cause** : Mauvais choix de la version maven
+**Solution appliquée** : Passer maven à la version supérieur
+
+### Erreur de compilation de l'application front-end (PARTIELLEMENT RÉSOLU)
+**Problème** : Erreur lors de l'execution de npm install dans le service webapp
+**Cause** : Selon quelque chose, pendant l'installation, des dossiers se retrouvait avec un nom modifier ce qui bloquait npm (La source du problème reste inconu)
+**Solution appliquée** : Utilise npm ci au lieu de npm i (Cette solution n'est pas correcte)
+
 ---
 
 ##  Configuration Avancée
@@ -531,13 +471,6 @@ spring.data.mongodb.uri=mongodb://logistico_admin:mongo_pass_2024@nosqldatabase:
 app.broker.host=broker
 ```
 
-#### WebApp (React Build)
-```bash
-API_EP_URI=http://localhost/api
-RT_API_EP_URI=http://localhost/wsapi
-PUBLIC_PATH=/
-```
-
 ### Configuration Réseau Nginx
 ```nginx
 # REST API proxy
@@ -558,70 +491,3 @@ location / {
     try_files $uri $uri/ /index.html;
 }
 ```
-
----
-
-### Problèmes rencontrés et solutions
-
-#### 1. Erreur 500 Frontend Nginx (Résolu)
-**Problème** : L'application React retournait une erreur 500 avec le message "rewrite or internal redirection cycle while internally redirecting to /index.html"
-
-**Cause racine** : 
-- Le volume Docker était monté sur `/usr/share/nginx/html` (répertoire par défaut de Nginx)
-- Mais la configuration `nginx.conf` définissait `root /var/www/app`
-- Nginx ne trouvait pas les fichiers et créait une boucle de redirection
-
-**Solution appliquée** :
-1. Modification du `docker-compose.yaml` : Volume monté sur `/var/www/app` au lieu de `/usr/share/nginx/html`
-2. Copie manuelle des fichiers React build dans le conteneur
-3. Résultat : Frontend opérationnel sur http://localhost
-
-#### 2. Configuration des volumes et build React
-**Choix technique** : Utilisation d'un service `webapp` dédié pour builder React
-- **Avantage** : Séparation des responsabilités (build vs serving)
-- **Volume nommé** : `webapp-build` pour partager les fichiers entre builder et Nginx
-- **Build process** : Webpack en mode production génère les assets optimisés
-
-### Architecture réseau sécurisée
-
-#### Isolation par réseaux Docker
-**Choix** : 4 réseaux isolés pour sécuriser les communications
-
-1. **`sql-net`** : Bases de données SQL/NoSQL + APIs + outils admin
-2. **`nosql-net`** : MongoDB isolé (actuellement fusionné avec sql-net)
-3. **`broker-net`** : RabbitMQ + WebSocket API
-4. **`front-net`** : Frontend + APIs backend
-
-**Avantages** :
-- Isolation des couches (frontend, backend, données, messaging)
-- Sécurité : Chaque service n'accède qu'aux ressources nécessaires
-- Monitoring : Trafic réseau traceable par couche
-
-#### Gestion des secrets
-**Méthode** : Docker Secrets avec fichiers externes
-- **Sécurité** : Credentials stockés dans `secrets/` (gitignore recommandé)
-- **Flexibilité** : Changement des mots de passe sans rebuild des images
-- **Best practice** : Variables d'environnement pointent vers les secrets
-
-### Choix des technologies
-
-#### Base de données polyglotte
-- **MariaDB 11** : Données relationnelles, ACID, transactions
-- **MongoDB 7** : Documents JSON, scalabilité horizontale, NoSQL
-
-#### Message Broker
-- **RabbitMQ 3.12** : Message queuing robuste, interface de management
-- **Utilisation** : Communication asynchrone entre services
-
-#### Frontend/Backend
-- **React + Webpack** : SPA moderne, build optimisé pour production
-- **Nginx Alpine** : Serveur web léger, haute performance
-- **Spring Boot 3.3.3** : APIs REST/WebSocket, écosystème Java mature
-- **Python Flask** : API REST légère, intégration rapide
-
-### Points d'amélioration identifiés
-
-1. **APIs en redémarrage** : REST Python et Spring Boot nécessitent des corrections
-2. **Upgrade Spring Boot** : Migration vers 3.5.x planifiée
-3. **Monitoring** : Ajout de health checks et métriques
-4. **Tests** : Suite de tests end-to-end à implémenter
